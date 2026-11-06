@@ -755,7 +755,7 @@ body.repaso .content > p:has(mark.uhl), body.repaso .content > ul:has(mark.uhl),
 <script src="../firebase-config.js?v=1793932765"></script>
 <script type="module">import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocFromServer, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const STORE = 'm2';
 const $ = id => document.getElementById(id);
@@ -847,7 +847,21 @@ function mount(html, user){
   }
   const s = document.createElement('script'); s.textContent = $('appjs').textContent; document.body.appendChild(s);
   moduleNav();
+  diagnose(user.uid);
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
+}
+
+async function diagnose(uid){
+  const show = t => { const n = document.getElementById('storeNote'); if (n) n.textContent = t; };
+  const t0 = Date.now();
+  try {
+    await Promise.race([
+      getDocFromServer(doc(fs, 'users', uid, 'priv', 'acceso')),
+      new Promise((_, rej) => setTimeout(() => rej({ code: 'tiempo-agotado', message: 'Firestore no respondió en 15 s' }), 15000))
+    ]);
+  } catch (e) {
+    show('No se pudo conectar con tu cuenta. Motivo: ' + (e.code || '') + ' — ' + (e.message || e) + ' [proyecto ' + (window.FIREBASE_CONFIG.projectId) + ']');
+  }
 }
 
 async function moduleNav(){
