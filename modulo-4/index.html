@@ -760,7 +760,7 @@ body.repaso .content > p:has(mark.uhl), body.repaso .content > ul:has(mark.uhl),
 <script src="../firebase-config.js?v=1793986174"></script>
 <script type="module">import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocFromServer, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocFromServer, getDocsFromServer, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const STORE = 'm4';
 const $ = id => document.getElementById(id);
@@ -805,6 +805,8 @@ async function tryCode(code){
   return gunzip(plain);
 }
 
+let inflight = 0;
+const track = p => { inflight++; return p.finally(() => { inflight--; }); };
 function shim(uid){
   window.claude = { use: async name => {
     if (name === 'user') return { id: async () => uid };
@@ -812,8 +814,20 @@ function shim(uid){
       collection: () => {
         const c = collection(fs, 'users', uid, STORE);
         return {
-          doc: id => ({ set: d => setDoc(doc(c, id), d), delete: () => deleteDoc(doc(c, id)) }),
-          onSnapshot: (next, err) => onSnapshot(c, { includeMetadataChanges: true }, next, err)
+          doc: id => ({ set: d => track(setDoc(doc(c, id), d)), delete: () => track(deleteDoc(doc(c, id))) }),
+          onSnapshot: (next, err) => {
+            const unsub = onSnapshot(c, { includeMetadataChanges: true }, next, err);
+            // Pull straight from the server too: on open, every 60 s, and whenever the page comes back into view
+            const pull = () => inflight ? null : getDocsFromServer(c).then(s => inflight ? null : s).then(s => s && next(s)).catch(e => {
+              const n = document.getElementById('storeNote');
+              if (n) n.textContent = 'No se pudo conectar con tu cuenta. Motivo: ' + (e.code || '') + ' — ' + (e.message || e);
+            });
+            pull();
+            setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
+            window.addEventListener('focus', pull);
+            return unsub;
+          }
         };
       }
     };
@@ -852,7 +866,6 @@ function mount(html, user){
   }
   const s = document.createElement('script'); s.textContent = $('appjs').textContent; document.body.appendChild(s);
   moduleNav();
-  diagnose(user.uid);
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
 }
 
