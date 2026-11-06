@@ -1,0 +1,27 @@
+[
+ {
+  "slug": "modulo-1",
+  "label": "Módulo 1",
+  "name": "Historia y Cultura de la Moda"
+ },
+ {
+  "slug": "modulo-2",
+  "label": "Módulo 2",
+  "name": "Sistemas Empresariales"
+ },
+ {
+  "slug": "modulo-3",
+  "label": "Módulo 3",
+  "name": "Gestión Empresarial I"
+ },
+ {
+  "slug": "modulo-4",
+  "label": "Módulo 4",
+  "name": "Gestión Empresarial II"
+ },
+ {
+  "slug": "modulo-5",
+  "label": "Módulo 5",
+  "name": "New-Era Digital Business"
+ }
+]

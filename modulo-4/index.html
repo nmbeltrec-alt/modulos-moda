@@ -337,6 +337,13 @@ body.repaso .content > p:has(mark.uhl), body.repaso .content > ul:has(mark.uhl),
 .glink{margin-top:14px; font:inherit; font-size:14px; background:none; border:0; color:var(--muted); text-decoration:underline; cursor:pointer; padding:0}
 .acct{margin-top:24px; padding:12px 8px 0; border-top:1px solid var(--line); display:grid; gap:6px; font-size:13px; color:var(--muted)}
 .acct button{justify-self:start; font:inherit; font-size:13px; background:none; border:1px solid var(--line); color:var(--fg); border-radius:999px; padding:4px 12px; cursor:pointer}
+
+.modnav{display:flex; align-items:center; gap:6px; min-width:0}
+.mhome{font-size:14px; font-weight:600; text-decoration:none; padding:7px 12px; border-radius:999px; border:1px solid var(--line); background:var(--soft); white-space:nowrap}
+.mhome::before{content:"⌂ "; font-weight:400}
+#modSel{font:inherit; font-size:14px; max-width:220px; padding:7px 10px; border-radius:999px; border:1px solid var(--line); background:var(--paper); color:var(--fg); cursor:pointer; text-overflow:ellipsis}
+@media (max-width: 980px){ .topbar .brand{display:none} }
+@media (max-width: 640px){ #modSel{max-width:132px} .modnav{order:1; flex:1 1 auto} .topbar .toggle{order:2} .topbar .toggle .tl{display:none} .mhome{padding:7px 10px} }
 </style>
 </head><body>
 <div id="gate" class="gate"><div class="gcard">
@@ -719,33 +726,34 @@ body.repaso .content > p:has(mark.uhl), body.repaso .content > ul:has(mark.uhl),
 
   // ---- storage boot
   lsLoad(); refresh();
-  storeNote.textContent = 'Tus resaltados y notas se guardan en este navegador.';
+  storeNote.textContent = 'Conectando con tu cuenta…';
   (async () => {
-    if (!window.claude || !window.claude.use) return;
+    const localOnly = m => { storeNote.textContent = m || 'Tus resaltados y notas se guardan solo en este navegador.'; };
+    if (!window.claude || !window.claude.use) { localOnly(); return; }
     try {
       const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
-      if (!db || !user) return;
-      const uid = await user.id(); if (!uid) return;
+      if (!db || !user) { localOnly(); return; }
+      const uid = await user.id(); if (!uid) { localOnly(); return; }
       const c = db.collection('data/users/' + uid);
-      let first = true;
-      const timer = setTimeout(() => { if (first) storeNote.textContent = 'No se pudo conectar con tu cuenta todavía; por ahora se guarda en este navegador.'; }, 10000);
+      const pending = new Map(docs);   // made in this browser before it was linked
+      let first = true, server = false;
+      col = c;                         // from now on every change goes to the account (queued if offline)
+      const timer = setTimeout(() => { if (!server) storeNote.textContent = 'Sin conexión con tu cuenta en este momento. Tus cambios quedan guardados y se suben solos al reconectar.'; }, 12000);
       c.onSnapshot(snap => {
-        if (first && snap.metadata.fromCache) return;
+        docs.clear(); snap.docs.forEach(d => docs.set(d.id, d.data()));
         if (first) {
-          first = false; clearTimeout(timer);
-          const remoteEmpty = snap.empty; const local = new Map(docs);
-          col = c;
-          storeNote.textContent = 'Tus resaltados y notas se guardan en tu cuenta: los verás en cualquier dispositivo. Solo tú puedes verlos.';
-          docs.clear(); snap.docs.forEach(d => docs.set(d.id, d.data()));
-          if (remoteEmpty) {
-            try { const st = JSON.parse(localStorage.getItem('m4-hcm-estudiados') || '{}') || {}; Object.keys(st).forEach(k => local.set('e_' + k, { t: 'e', k, at: Date.now() })); } catch(e) {}
-            local.forEach((v, k) => { docs.set(k, v); write(k, v); });
+          first = false;
+          let synced = false; try { synced = localStorage.getItem('m4-sincronizado') === '1'; } catch(e) {}
+          if (!synced) {
+            try { const st = JSON.parse(localStorage.getItem('m4-hcm-estudiados') || '{}') || {}; Object.keys(st).forEach(k => { if (!pending.has('e_' + k)) pending.set('e_' + k, { t: 'e', k, at: Date.now() }); }); } catch(e) {}
+            pending.forEach((v, k) => { if (!docs.has(k)) { docs.set(k, v); write(k, v); } });
+            try { localStorage.setItem('m4-sincronizado', '1'); localStorage.removeItem(LS); } catch(e) {}
           }
-          refresh(); return;
         }
-        docs.clear(); snap.docs.forEach(d => docs.set(d.id, d.data())); refresh();
-      }, err => { clearTimeout(timer); col = null; storeNote.textContent = 'Tus resaltados y notas se guardan en este navegador.'; });
-    } catch(e) {}
+        if (!snap.metadata.fromCache && !server) { server = true; clearTimeout(timer); storeNote.textContent = 'Sincronizado con tu cuenta: tus resaltados, notas y temas estudiados se ven en todos tus dispositivos. Solo tú puedes verlos.'; }
+        refresh();
+      }, err => { clearTimeout(timer); col = null; localOnly('No se pudo conectar con tu cuenta (' + ((err && err.code) || 'error') + '). Por ahora se guarda en este navegador.'); });
+    } catch(e) { localOnly(); }
   })();
 })();
 </script>
@@ -805,7 +813,7 @@ function shim(uid){
         const c = collection(fs, 'users', uid, STORE);
         return {
           doc: id => ({ set: d => setDoc(doc(c, id), d), delete: () => deleteDoc(doc(c, id)) }),
-          onSnapshot: (next, err) => onSnapshot(c, next, err)
+          onSnapshot: (next, err) => onSnapshot(c, { includeMetadataChanges: true }, next, err)
         };
       }
     };
@@ -843,7 +851,24 @@ function mount(html, user){
     side.appendChild(p);
   }
   const s = document.createElement('script'); s.textContent = $('appjs').textContent; document.body.appendChild(s);
+  moduleNav();
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
+}
+
+async function moduleNav(){
+  const bar = document.querySelector('.topbar'); if (!bar) return;
+  const here = location.pathname.replace(/\/(index\.html)?$/, '').split('/').pop();
+  const wrap = document.createElement('div'); wrap.className = 'modnav';
+  wrap.innerHTML = '<a class="mhome" href="../">Inicio</a>';
+  const brand = bar.querySelector('.brand'); bar.insertBefore(wrap, brand ? brand.nextSibling : bar.firstChild);
+  try {
+    const mods = await (await fetch('../modules.json', { cache: 'no-store' })).json();
+    if (!Array.isArray(mods) || mods.length < 2) return;
+    const sel = document.createElement('select'); sel.id = 'modSel'; sel.setAttribute('aria-label', 'Cambiar de módulo');
+    mods.forEach(m => { const o = document.createElement('option'); o.value = m.slug; o.textContent = m.label + ' · ' + m.name; if (m.slug === here) o.selected = true; sel.appendChild(o); });
+    sel.onchange = () => { location.href = '../' + sel.value + '/'; };
+    wrap.appendChild(sel);
+  } catch (e) {}
 }
 
 async function openWith(user){
