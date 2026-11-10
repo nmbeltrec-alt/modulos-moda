@@ -755,7 +755,7 @@ body.repaso .content > p:has(mark.uhl), body.repaso .content > ul:has(mark.uhl),
 <script src="../firebase-config.js?v=1793932765"></script>
 <script type="module">import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocFromServer, getDocsFromServer, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, getDocFromServer, getDocsFromServer, setDoc, deleteDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const STORE = 'm2';
 const $ = id => document.getElementById(id);
@@ -766,8 +766,9 @@ if (!window.FIREBASE_CONFIG) { say('Falta la configuración de Firebase.'); thro
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
 let fs;
-try { fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
-catch (e) { fs = initializeFirestore(app, {}); }
+// Direct connection per tab (no shared cache between tabs) and long polling, which works behind blockers and on mobile
+const VERSION = '2026-11-09';
+fs = initializeFirestore(app, { localCache: memoryLocalCache(), experimentalForceLongPolling: true });
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 getRedirectResult(auth).catch(e => say('No se pudo iniciar sesión: ' + (e.code || e.message)));
 
@@ -801,7 +802,8 @@ async function tryCode(code){
 }
 
 let inflight = 0;
-const track = p => { inflight++; return p.finally(() => { inflight--; }); };
+const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: 'tiempo-agotado', message: what + ' no respondió en ' + (ms / 1000) + ' s' }), ms))]);
+const track = p => { inflight++; let done = false; const fin = () => { if (!done) { done = true; inflight--; } }; setTimeout(fin, 20000); return p.finally(fin); };
 function shim(uid){
   window.claude = { use: async name => {
     if (name === 'user') return { id: async () => uid };
@@ -813,7 +815,7 @@ function shim(uid){
           onSnapshot: (next, err) => {
             const unsub = onSnapshot(c, { includeMetadataChanges: true }, next, err);
             // Pull straight from the server too: on open, every 60 s, and whenever the page comes back into view
-            const pull = () => inflight ? null : getDocsFromServer(c).then(s => inflight ? null : s).then(s => s && next(s)).catch(e => {
+            const pull = () => inflight ? null : withTimeout(getDocsFromServer(c), 20000, 'Tu cuenta').then(s => inflight ? null : s).then(s => s && next(s)).catch(e => {
               const n = document.getElementById('storeNote');
               if (n) n.textContent = 'No se pudo conectar con tu cuenta. Motivo: ' + (e.code || '') + ' — ' + (e.message || e);
             });
@@ -855,7 +857,7 @@ function mount(html, user){
   if (side) {
     const p = document.createElement('div'); p.className = 'acct';
     p.innerHTML = '<span></span><button type="button">Cerrar sesión</button>';
-    p.querySelector('span').textContent = user.email || '';
+    p.querySelector('span').textContent = (user.email || '') + ' · versión ' + VERSION;
     p.querySelector('button').onclick = async () => { try { localStorage.removeItem('m1-code'); } catch(e) {} await signOut(auth); location.reload(); };
     side.appendChild(p);
   }
