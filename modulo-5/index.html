@@ -774,7 +774,7 @@ const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
 let fs;
 // Direct connection per tab (no shared cache between tabs) and long polling, which works behind blockers and on mobile
-const VERSION = '2026-11-09';
+const VERSION = '2026-11-11';
 fs = initializeFirestore(app, { localCache: memoryLocalCache(), experimentalForceLongPolling: true });
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 getRedirectResult(auth).catch(e => say('No se pudo iniciar sesión: ' + (e.code || e.message)));
@@ -839,6 +839,25 @@ function shim(uid){
   } };
 }
 
+const APV = '20261111a';
+function apx(uid){
+  const col = n => collection(fs, 'users', uid, n);
+  const toMap = s => { const m = new Map(); s.docs.forEach(d => m.set(d.id, d.data())); return m; };
+  return { uid, mod: STORE, base: '../',
+    watch(n, next, err){
+      const c = col(n);
+      const unsub = onSnapshot(c, s => next(toMap(s)), err);
+      const pull = () => withTimeout(getDocsFromServer(c), 20000, 'Tus apuntes').then(s => next(toMap(s))).catch(() => {});
+      setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
+      return unsub;
+    },
+    list: n => withTimeout(getDocsFromServer(col(n)), 20000, 'Tu cuenta').then(toMap),
+    put: (n, id, d) => setDoc(doc(col(n), id), d),
+    del: (n, id) => deleteDoc(doc(col(n), id))
+  };
+}
+
 function lazyImages(){
   const io = new IntersectionObserver(async ents => {
     for (const en of ents) {
@@ -868,7 +887,10 @@ function mount(html, user){
     p.querySelector('button').onclick = async () => { try { localStorage.removeItem('m1-code'); } catch(e) {} await signOut(auth); location.reload(); };
     side.appendChild(p);
   }
-  const s = document.createElement('script'); s.textContent = $('appjs').textContent; document.body.appendChild(s);
+  window.APX = apx(user.uid);
+  let ran = false;
+  const runApp = () => { if (ran) return; ran = true; const s = document.createElement('script'); s.textContent = $('appjs').textContent; document.body.appendChild(s); };
+  const ap = document.createElement('script'); ap.src = '../apuntes.js?v=' + APV; ap.onload = runApp; ap.onerror = runApp; document.body.appendChild(ap); setTimeout(runApp, 6000);
   moduleNav();
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
 }

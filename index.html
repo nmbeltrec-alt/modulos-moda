@@ -7,12 +7,14 @@
 body{margin:0;background:var(--bg);color:var(--fg);font-family:Jost,"Avenir Next",sans-serif;padding:48px max(16px,env(safe-area-inset-left,0px))}
 main{max-width:640px;margin:0 auto}h1{font-family:"Bodoni Moda",Didot,Georgia,serif;font-size:40px;margin:0 0 24px}
 a.m{display:block;text-decoration:none;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:12px}
-a.m b{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--a)}a.m span{font-size:19px}
+a.m b{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--a)}a.m span{font-size:19px}a.m.ap{margin-top:22px;border-style:dashed}a.m.ap b{color:var(--fg)}
 </style></head><body><main><h1>Mis módulos</h1><div id="mods">
 <a class="m" href="modulo-1/"><b>Módulo 1</b><span>Historia y Cultura de la Moda</span></a>
 <a class="m" href="modulo-2/"><b>Módulo 2</b><span>Sistemas Empresariales</span></a>
 <a class="m" href="modulo-3/"><b>Módulo 3</b><span>Gestión Empresarial I</span></a>
 <a class="m" href="modulo-4/"><b>Módulo 4</b><span>Gestión Empresarial II</span></a>
 <a class="m" href="modulo-5/"><b>Módulo 5</b><span>New-Era Digital Business</span></a>
-</div></main>
+</div>
+<a class="m ap" href="apuntes/"><b>Apuntes de clase</b><span>Todos tus apuntes, enlazados a los módulos</span></a>
+</main>
 <script>fetch("modules.json",{cache:"no-store"}).then(r=>r.json()).then(ms=>{const box=document.getElementById("mods");box.innerHTML="";ms.forEach(m=>{const a=document.createElement("a");a.className="m";a.href=m.slug+"/";const b=document.createElement("b");b.textContent=m.label;const s=document.createElement("span");s.textContent=m.name;a.append(b,s);box.appendChild(a);});}).catch(()=>{});</script></body></html>
